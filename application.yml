@@ -1,0 +1,49 @@
+spring:
+  main:
+    banner-mode: "off"
+logging:
+  pattern:
+    console: "%d{HH:mm:ss} %-5level %logger{36} - %msg%n"
+  level:
+    root: INFO
+    org.springframework.boot.StartupInfoLogger: OFF
+    org.springframework.boot.web.embedded.tomcat: WARN
+    org.springframework.boot.web.servlet.context: WARN
+    org.springframework.web.servlet.DispatcherServlet: WARN
+
+application:
+  unidbg:
+    # 默认使用内置 APK（classpath）：com/dragon/read/oversea/gp/apk/base.apk
+    # 需要替换 APK：把新 APK 放到 src/main/resources/com/dragon/read/oversea/gp/apk/base.apk 即可
+    #
+    # 或者覆盖为本地文件路径（优先级更高）：
+    # apk-path: /abs/path/to/base.apk
+    #
+    # 或者显式指定 classpath 资源路径：
+    # apk-classpath: com/dragon/read/oversea/gp/apk/base.apk
+
+fq:
+  download:
+    request-interval-ms: 500
+    max-retries: 3
+    retry-delay-ms: 1500
+    retry-max-delay-ms: 10000
+  api:
+    base-url: https://api5-normal-sinfonlineb.fqnovel.com
+    cookie: store-region=cn-zj; store-region-src=did; install_id=670078579016233;
+    device:
+      aid: '1967'
+      cdid: 5566b484-82f9-4cef-880d-60ca354e6a99
+      device-brand: HUAWEI
+      device-id: '670078578733609'
+      device-type: WLZ-AN00
+      dpi: '480'
+      host-abi: arm64-v8a
+      install-id: '670078579016233'
+      resolution: 1920*1080
+      rom-version: V433IR+release-keys
+      update-version-code: '68132'
+      version-code: '68132'
+      version-name: 6.8.1.32
+    user-agent: com.dragon.read.oversea.gp/68132 (Linux; U; Android 13; zh_CN; WLZ-AN00;
+      Build/V433IR;tt-ok/3.12.13.4-tiktok)
