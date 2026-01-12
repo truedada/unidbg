@@ -22,6 +22,10 @@ mvn -DskipTests package
 ```bash
 java -jar target/fqnovel.jar
 ```
+## docker
+```bash
+docker run -d --name fqnovel --restart=always -p 9999:9999 gxmandppx/unidbg-fq:latest
+```
 ## 免责声明
 
 **本项目仅供学习交流使用，使用时请遵守相关法律法规。用户需自行承担由此引发的任何法律责任和风险。程序的作者及项目贡献者不对因使用本程序所造成的任何损失、损害或法律后果负责！**
