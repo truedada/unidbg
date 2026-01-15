@@ -1,8 +1,9 @@
+ARG DEBIAN_IMAGE=debian:trixie-slim
+
 FROM eclipse-temurin:8-jre-jammy AS jre
 
-# Debian 13 (trixie) 运行时镜像
-ARG DEBIAN_SUITE=trixie
-FROM debian:${DEBIAN_SUITE}-slim
+# Debian 运行时镜像（可在构建时用 DEBIAN_IMAGE 覆盖，如 debian:latest）
+FROM ${DEBIAN_IMAGE}
 
 WORKDIR /app
 
