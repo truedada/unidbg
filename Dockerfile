@@ -1,11 +1,20 @@
-FROM eclipse-temurin:8-jre-jammy
+FROM eclipse-temurin:8-jre-jammy AS jre
+
+# Debian 13 (trixie) 运行时镜像
+ARG DEBIAN_SUITE=trixie
+FROM debian:${DEBIAN_SUITE}-slim
 
 WORKDIR /app
+
+# 拷贝 JRE 8（避免在 Debian 上额外装 JDK/JRE）
+COPY --from=jre /opt/java/openjdk /opt/java/openjdk
+ENV JAVA_HOME=/opt/java/openjdk
+ENV PATH="$JAVA_HOME/bin:$PATH"
 
 # 默认使用中国时区（可通过运行时设置 TZ 覆盖）
 ENV TZ=Asia/Shanghai
 RUN apt-get update \
-  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends tzdata \
+  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends tzdata ca-certificates \
   && ln -snf /usr/share/zoneinfo/$TZ /etc/localtime \
   && echo $TZ > /etc/timezone \
   && rm -rf /var/lib/apt/lists/*
