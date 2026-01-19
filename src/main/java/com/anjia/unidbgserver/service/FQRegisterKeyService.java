@@ -39,8 +39,11 @@ public class FQRegisterKeyService {
     @Resource
     private UpstreamRateLimiter upstreamRateLimiter;
 
-    private final RestTemplate restTemplate = new RestTemplate();
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    @Resource
+    private RestTemplate restTemplate;
+
+    @Resource
+    private ObjectMapper objectMapper;
 
     // 默认FQ变量配置
     private FqVariable defaultFqVariable;

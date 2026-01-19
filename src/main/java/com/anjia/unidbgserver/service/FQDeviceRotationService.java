@@ -2,17 +2,35 @@ package com.anjia.unidbgserver.service;
 
 import com.anjia.unidbgserver.config.FQApiProperties;
 import com.anjia.unidbgserver.dto.DeviceInfo;
+import com.anjia.unidbgserver.dto.FQSearchRequest;
+import com.anjia.unidbgserver.dto.FqVariable;
+import com.anjia.unidbgserver.utils.FQApiUtils;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.client.RestTemplate;
 
 import javax.annotation.PostConstruct;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.LinkedHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.zip.GZIPInputStream;
+import java.net.URI;
 
 /**
  * 设备信息风控（ILLEGAL_ACCESS）时的自愈：自动更换设备信息并刷新 registerkey。
@@ -25,6 +43,11 @@ public class FQDeviceRotationService {
 
     private final FQApiProperties fqApiProperties;
     private final FQRegisterKeyService registerKeyService;
+    private final FQEncryptServiceWorker fqEncryptServiceWorker;
+    private final FQApiUtils fqApiUtils;
+    private final UpstreamRateLimiter upstreamRateLimiter;
+    private final RestTemplate restTemplate;
+    private final ObjectMapper objectMapper;
 
     private final ReentrantLock lock = new ReentrantLock();
     private volatile long lastRotateAtMs = 0L;
@@ -43,19 +66,224 @@ public class FQDeviceRotationService {
             fqApiProperties.setDevicePool(pool);
         }
 
-        if (fqApiProperties.isDevicePoolShuffleOnStartup() && pool.size() > 1) {
-            Collections.shuffle(pool, ThreadLocalRandom.current());
+        String startupName = fqApiProperties.getDevicePoolStartupName();
+        if (startupName != null) {
+            startupName = startupName.trim();
         }
 
-        // 启动时随机选择一个作为当前设备（经过 shuffle 后取第一个即可）
-        FQApiProperties.DeviceProfile selected = pool.get(0);
-        applyDeviceProfile(selected);
-        poolIndex.set(1);
+        int selectedIndex = findByName(pool, startupName);
 
-        String name = selected.getName();
-        String deviceId = selected.getDevice() != null ? selected.getDevice().getDeviceId() : null;
-        String installId = selected.getDevice() != null ? selected.getDevice().getInstallId() : null;
+        // 若未指定启动设备，则按配置选择随机/首个
+        if (selectedIndex < 0 && fqApiProperties.isDevicePoolShuffleOnStartup() && pool.size() > 1) {
+            Collections.shuffle(pool, ThreadLocalRandom.current());
+        }
+        if (selectedIndex < 0) {
+            selectedIndex = 0;
+        }
+
+        // 启动探测：随机启动但跳过“启动就风控”的设备（例如 search 无 search_id）
+        if (selectedIndex >= 0 && fqApiProperties.isDevicePoolProbeOnStartup() && pool.size() > 1) {
+            int maxAttempts = Math.max(1, fqApiProperties.getDevicePoolProbeMaxAttempts());
+            maxAttempts = Math.min(maxAttempts, pool.size());
+
+            int attempt = 0;
+            int startIdx = selectedIndex;
+            int idx = startIdx;
+            boolean ok = false;
+            while (attempt < maxAttempts) {
+                FQApiProperties.DeviceProfile candidate = pool.get(idx);
+                applyDeviceProfile(candidate);
+                attempt++;
+                ok = probeSearchOk();
+                if (ok) {
+                    selectedIndex = idx;
+                    break;
+                }
+                idx = (idx + 1) % pool.size();
+            }
+
+            if (!ok) {
+                // 兜底：探测全失败时，仍按原逻辑使用当前 selectedIndex
+                FQApiProperties.DeviceProfile fallback = pool.get(selectedIndex);
+                applyDeviceProfile(fallback);
+                log.warn("启动设备探测全部失败，回退使用设备池设备：name={}", fallback != null ? fallback.getName() : null);
+            } else {
+                log.info("启动设备探测通过：selectedIndex={}, attempts={}", selectedIndex, attempt);
+            }
+        } else {
+            FQApiProperties.DeviceProfile selected = pool.get(selectedIndex);
+            applyDeviceProfile(selected);
+        }
+
+        poolIndex.set(Math.floorMod(selectedIndex + 1, pool.size()));
+
+        FQApiProperties.DeviceProfile selected = pool.get(selectedIndex);
+        String name = selected != null ? selected.getName() : null;
+        String deviceId = selected != null && selected.getDevice() != null ? selected.getDevice().getDeviceId() : null;
+        String installId = selected != null && selected.getDevice() != null ? selected.getDevice().getInstallId() : null;
         log.info("启动已选择设备池设备：name={}, deviceId={}, installId={}", name, deviceId, installId);
+    }
+
+    private int findByName(List<FQApiProperties.DeviceProfile> pool, String name) {
+        if (pool == null || pool.isEmpty() || name == null || name.isEmpty()) {
+            return -1;
+        }
+        for (int i = 0; i < pool.size(); i++) {
+            FQApiProperties.DeviceProfile profile = pool.get(i);
+            if (profile == null || profile.getName() == null) {
+                continue;
+            }
+            if (name.equals(profile.getName().trim())) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * 启动轻量探测：发起一次 search 请求，要求返回 code=0 且包含 search_id 或 books 列表。
+     * 不做解密/不依赖 registerkey，仅用于剔除“启动就被拦截”的设备指纹。
+     */
+    private boolean probeSearchOk() {
+        try {
+            FQSearchRequest searchRequest = new FQSearchRequest();
+            searchRequest.setQuery("小说");
+            searchRequest.setOffset(0);
+            searchRequest.setCount(1);
+            searchRequest.setTabType(1);
+            searchRequest.setPassback(0);
+            searchRequest.setIsFirstEnterSearch(true);
+
+            FqVariable var = new FqVariable(fqApiProperties);
+            String base = fqApiUtils.getBaseUrl();
+            String url = base.replace("api5-normal-sinfonlineb", "api5-normal-sinfonlinec")
+                + "/reading/bookapi/search/tab/v";
+            Map<String, String> params = fqApiUtils.buildSearchParams(var, searchRequest);
+            String fullUrl = fqApiUtils.buildUrlWithParams(url, params);
+
+            Map<String, String> headers = buildSearchHeadersForProbe();
+            upstreamRateLimiter.acquire();
+            Map<String, String> signedHeaders = fqEncryptServiceWorker.generateSignatureHeaders(fullUrl, headers).get();
+            if (signedHeaders == null || signedHeaders.isEmpty()) {
+                return false;
+            }
+
+            HttpHeaders httpHeaders = new HttpHeaders();
+            signedHeaders.forEach(httpHeaders::set);
+            headers.forEach(httpHeaders::set);
+            HttpEntity<String> entity = new HttpEntity<>(httpHeaders);
+
+            ResponseEntity<byte[]> response = restTemplate.exchange(URI.create(fullUrl), HttpMethod.GET, entity, byte[].class);
+            String body = decodeUpstreamResponse(response);
+            if (body == null) {
+                return false;
+            }
+            String trimmed = body.trim();
+            if (trimmed.isEmpty() || trimmed.startsWith("<")) {
+                return false;
+            }
+
+            JsonNode root = objectMapper.readTree(trimmed);
+            int code = root.path("code").asInt(-1);
+            if (code != 0) {
+                return false;
+            }
+            String searchId = extractSearchIdDeep(root);
+            if (searchId != null && !searchId.isEmpty()) {
+                return true;
+            }
+            JsonNode books = root.path("data").path("books");
+            return books.isArray() && books.size() > 0;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private Map<String, String> buildSearchHeadersForProbe() {
+        Map<String, String> base = fqApiUtils.buildCommonHeaders();
+        if (base.containsKey("authorization")) {
+            return base;
+        }
+        Map<String, String> ordered = new LinkedHashMap<>();
+        for (Map.Entry<String, String> entry : base.entrySet()) {
+            ordered.put(entry.getKey(), entry.getValue());
+            if ("x-reading-request".equalsIgnoreCase(entry.getKey())) {
+                ordered.put("authorization", "Bearer");
+            }
+        }
+        if (!ordered.containsKey("authorization")) {
+            ordered.put("authorization", "Bearer");
+        }
+        return ordered;
+    }
+
+    private String extractSearchIdDeep(JsonNode root) {
+        if (root == null) {
+            return "";
+        }
+        java.util.ArrayDeque<JsonNode> stack = new java.util.ArrayDeque<>();
+        stack.push(root);
+        while (!stack.isEmpty()) {
+            JsonNode node = stack.pop();
+            if (node == null || node.isNull() || node.isMissingNode()) {
+                continue;
+            }
+            if (node.isObject()) {
+                String direct = node.path("search_id").asText("");
+                if (direct != null && !direct.trim().isEmpty()) {
+                    return direct.trim();
+                }
+                String alt = node.path("search_id_str").asText("");
+                if (alt != null && !alt.trim().isEmpty()) {
+                    return alt.trim();
+                }
+                node.fields().forEachRemaining(e -> stack.push(e.getValue()));
+            } else if (node.isArray()) {
+                for (JsonNode child : node) {
+                    stack.push(child);
+                }
+            }
+        }
+        return "";
+    }
+
+    private String decodeUpstreamResponse(ResponseEntity<byte[]> response) {
+        if (response == null) {
+            return "";
+        }
+        byte[] body = response.getBody();
+        if (body == null || body.length == 0) {
+            return "";
+        }
+
+        boolean isGzip = false;
+        List<String> enc = response.getHeaders() != null ? response.getHeaders().get("Content-Encoding") : null;
+        if (enc != null) {
+            for (String e : enc) {
+                if (e != null && e.toLowerCase(Locale.ROOT).contains("gzip")) {
+                    isGzip = true;
+                    break;
+                }
+            }
+        }
+        if (!isGzip && body.length >= 2 && body[0] == (byte) 0x1f && body[1] == (byte) 0x8b) {
+            isGzip = true;
+        }
+        if (!isGzip) {
+            return new String(body, StandardCharsets.UTF_8);
+        }
+
+        try (GZIPInputStream gzipInputStream = new GZIPInputStream(new ByteArrayInputStream(body))) {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buffer = new byte[1024];
+            int length;
+            while ((length = gzipInputStream.read(buffer)) != -1) {
+                out.write(buffer, 0, length);
+            }
+            return new String(out.toByteArray(), StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            return new String(body, StandardCharsets.UTF_8);
+        }
     }
 
     /**

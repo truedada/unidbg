@@ -24,6 +24,7 @@ import java.util.Map;
 import java.util.LinkedHashMap;
 import java.util.ArrayList;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -67,8 +68,14 @@ public class FQNovelService {
     @Resource
     private AutoRestartService autoRestartService;
 
-    private final RestTemplate restTemplate = new RestTemplate();
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    @Resource
+    private RestTemplate restTemplate;
+
+    @Resource
+    private ObjectMapper objectMapper;
+
+    @Resource(name = "applicationTaskExecutor")
+    private Executor taskExecutor;
 
     // 默认FQ变量配置
     private FqVariable defaultFqVariable;
@@ -171,10 +178,10 @@ public class FQNovelService {
                     boolean nonJson = message.contains("UPSTREAM_NON_JSON");
 
                     boolean retryable = illegal || empty || gzipErr || nonJson;
-                    if (retryable) {
-                        autoRestartService.recordFailure(illegal ? "ILLEGAL_ACCESS" : (empty ? "UPSTREAM_EMPTY" : (gzipErr ? "UPSTREAM_GZIP" : "UPSTREAM_NON_JSON")));
-                    }
                     if (!retryable || attempt >= maxAttempts) {
+                        if (retryable) {
+                            autoRestartService.recordFailure(illegal ? "ILLEGAL_ACCESS" : (empty ? "UPSTREAM_EMPTY" : (gzipErr ? "UPSTREAM_GZIP" : "UPSTREAM_NON_JSON")));
+                        }
                         if (retryable && illegal) {
                             return FQNovelResponse.error("批量获取章节内容失败: ILLEGAL_ACCESS（已重试仍失败，建议更换设备/降低频率）");
                         }
@@ -192,9 +199,9 @@ public class FQNovelService {
                     }
 
                     if (retryable) {
-                        if (illegal) {
-                            deviceRotationService.rotateIfNeeded("ILLEGAL_ACCESS");
-                        }
+                        String rotateReason = illegal ? "ILLEGAL_ACCESS"
+                            : (empty ? "UPSTREAM_EMPTY" : (gzipErr ? "UPSTREAM_GZIP" : "UPSTREAM_NON_JSON"));
+                        deviceRotationService.rotateIfNeeded(rotateReason);
                     }
 
                     // 指数退避 + 轻微抖动，避免并发重试打爆上游
@@ -210,7 +217,7 @@ public class FQNovelService {
                 }
             }
             return FQNovelResponse.error("批量获取章节内容失败: 超过最大重试次数");
-        });
+        }, taskExecutor);
     }
 
     private String decodeUpstreamResponse(ResponseEntity<byte[]> response) {
@@ -441,7 +448,7 @@ public class FQNovelService {
                 log.error("获取书籍信息失败 - bookId: {}", bookId, e);
                 return FQNovelResponse.error("获取书籍信息失败: " + e.getMessage());
             }
-        });
+        }, taskExecutor);
     }
 
     /**
@@ -472,7 +479,7 @@ public class FQNovelService {
                 log.error("获取解密章节内容失败 - itemIds: {}", itemIds, e);
                 return FQNovelResponse.error("获取解密章节内容失败: " + e.getMessage());
             }
-        });
+        }, taskExecutor);
     }
 
     /**
@@ -566,7 +573,7 @@ public class FQNovelService {
                     request.getBookId(), request.getChapterId(), e);
                 return FQNovelResponse.error("获取章节内容失败: " + e.getMessage());
             }
-        });
+        }, taskExecutor);
     }
 
     /**
@@ -785,7 +792,7 @@ public class FQNovelService {
                     request.getBookId(), request.getChapterRange(), e);
                 return FQNovelResponse.error("批量获取章节内容失败: " + e.getMessage());
             }
-        });
+        }, taskExecutor);
     }
 
     /**
@@ -936,9 +943,8 @@ public class FQNovelService {
         // 作者信息 - 转换为Map
         if (resp.getAuthorInfo() != null) {
             try {
-                ObjectMapper mapper = new ObjectMapper();
-                String authorInfoJson = mapper.writeValueAsString(resp.getAuthorInfo());
-                Map<String, Object> authorInfoMap = mapper.readValue(authorInfoJson, new TypeReference<Map<String, Object>>() {});
+                String authorInfoJson = objectMapper.writeValueAsString(resp.getAuthorInfo());
+                Map<String, Object> authorInfoMap = objectMapper.readValue(authorInfoJson, new TypeReference<Map<String, Object>>() {});
                 info.setAuthorInfo(authorInfoMap);
             } catch (Exception e) {
                 log.warn("转换作者信息失败", e);

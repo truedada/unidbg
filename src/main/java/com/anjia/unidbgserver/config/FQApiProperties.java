@@ -65,6 +65,33 @@ public class FQApiProperties {
     private boolean devicePoolShuffleOnStartup = true;
 
     /**
+     * 启动时优先选择指定 name 的设备（可选）。
+     * <p>
+     * 配置后将忽略 {@link #devicePoolShuffleOnStartup} 的随机选择逻辑，
+     * 始终使用该 name 对应的设备作为启动设备（未找到则回退到原有逻辑）。
+     * <pre>
+     * fq:
+     *   api:
+     *     device-pool-startup-name: dev001
+     * </pre>
+     */
+    private String devicePoolStartupName;
+
+    /**
+     * 启动时是否对“随机选中的设备”做一次轻量探测（默认 false）。
+     * <p>
+     * 用于规避某些设备一上来就触发风控/空响应（例如 SEARCH_NO_SEARCH_ID）。
+     * 探测失败则会继续尝试设备池内的下一个设备，直到成功或耗尽尝试次数。
+     */
+    private boolean devicePoolProbeOnStartup = false;
+
+    /**
+     * 启动探测最大尝试次数（默认 3）。
+     * 实际尝试次数不会超过 devicePoolSize 和 devicePool 实际数量。
+     */
+    private int devicePoolProbeMaxAttempts = 3;
+
+    /**
      * 风控切换冷却时间（毫秒，默认 30000）。
      * 避免触发风控后频繁轮换设备导致“疯狂切换/疯狂刷新 registerkey”。
      */

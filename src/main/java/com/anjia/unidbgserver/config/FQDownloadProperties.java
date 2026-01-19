@@ -32,6 +32,16 @@ public class FQDownloadProperties {
     private long retryMaxDelayMs = 10000;
 
     /**
+     * 上游连接超时（ms）
+     */
+    private long upstreamConnectTimeoutMs = 8000;
+
+    /**
+     * 上游读取超时（ms）
+     */
+    private long upstreamReadTimeoutMs = 15000;
+
+    /**
      * 单章接口触发时的预取章节数（用于减少上游请求次数）
      */
     private int chapterPrefetchSize = 30;

@@ -11,8 +11,8 @@ import javax.annotation.PostConstruct;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executor;
 import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.Executor;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -33,6 +33,9 @@ public class FQChapterPrefetchService {
 
     @javax.annotation.Resource(name = "applicationTaskExecutor")
     private Executor executor;
+
+    @javax.annotation.Resource(name = "fqPrefetchExecutor")
+    private Executor prefetchExecutor;
 
     private TimedLruCache<String, FQNovelChapterInfo> chapterCache;
     private TimedLruCache<String, List<String>> directoryCache;
@@ -124,7 +127,7 @@ public class FQChapterPrefetchService {
             } finally {
                 inflightPrefetch.remove(key);
             }
-        }, ForkJoinPool.commonPool());
+        }, prefetchExecutor != null ? prefetchExecutor : ForkJoinPool.commonPool());
 
         return created;
     }
@@ -233,7 +236,7 @@ public class FQChapterPrefetchService {
             } finally {
                 inflightDirectory.remove(bookId);
             }
-        }, ForkJoinPool.commonPool());
+        }, prefetchExecutor != null ? prefetchExecutor : ForkJoinPool.commonPool());
 
         try {
             return created.get();

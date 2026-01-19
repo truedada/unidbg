@@ -19,6 +19,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.zip.GZIPInputStream;
 
 /**
@@ -50,8 +51,14 @@ public class FQSearchService {
     @Resource
     private FQDownloadProperties downloadProperties;
 
-    private final RestTemplate restTemplate = new RestTemplate();
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    @Resource
+    private RestTemplate restTemplate;
+
+    @Resource
+    private ObjectMapper objectMapper;
+
+    @Resource(name = "applicationTaskExecutor")
+    private Executor taskExecutor;
 
     // 默认FQ变量配置
     private FqVariable defaultFqVariable;
@@ -289,7 +296,7 @@ public class FQSearchService {
 
                 // 随机延迟 1-2 秒
                 try {
-                    long delay = 1000 + (long)(Math.random() * 1000); // 1000-2000ms
+                    long delay = ThreadLocalRandom.current().nextLong(1000, 2001); // 1000-2000ms
                     Thread.sleep(delay);
                     searchRequest.setLastSearchPageInterval((int) delay); // 设置间隔时间
                 } catch (InterruptedException e) {
@@ -318,7 +325,7 @@ public class FQSearchService {
                 autoRestartService.recordFailure("SEARCH_EXCEPTION");
                 return FQNovelResponse.error("增强搜索失败: " + e.getMessage());
             }
-        });
+        }, taskExecutor);
     }
 
     /**
@@ -577,7 +584,7 @@ public class FQSearchService {
                 autoRestartService.recordFailure("SEARCH_SIMPLE_EXCEPTION");
                 return FQNovelResponse.error("搜索书籍失败: " + e.getMessage());
             }
-        });
+        }, taskExecutor);
     }
 
     /**
@@ -655,7 +662,7 @@ public class FQSearchService {
                 log.error("获取书籍目录失败 - bookId: {}", directoryRequest.getBookId(), e);
                 return FQNovelResponse.error("获取书籍目录失败: " + e.getMessage());
             }
-        });
+        }, taskExecutor);
     }
 
     /**
