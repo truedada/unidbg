@@ -51,7 +51,26 @@ public class FQDeviceRotationService {
 
     private final ReentrantLock lock = new ReentrantLock();
     private volatile long lastRotateAtMs = 0L;
+    private volatile String currentProfileName = "";
+    private volatile String lastRotateReason = "";
+    private volatile String lastRotateProfileName = "";
     private final AtomicInteger poolIndex = new AtomicInteger(0);
+
+    public long getLastRotateAtMs() {
+        return lastRotateAtMs;
+    }
+
+    public String getCurrentProfileName() {
+        return currentProfileName;
+    }
+
+    public String getLastRotateReason() {
+        return lastRotateReason;
+    }
+
+    public String getLastRotateProfileName() {
+        return lastRotateProfileName;
+    }
 
     @PostConstruct
     public void initDevicePoolOnStartup() {
@@ -382,6 +401,9 @@ public class FQDeviceRotationService {
         log.warn("检测到风控/异常，已从配置池切换设备：index={}, name={}, deviceId={}, installId={}, reason={}",
             idx, name, deviceId, installId, reason);
 
+        lastRotateReason = reason != null ? reason : "";
+        lastRotateProfileName = name != null ? name : "";
+
         return toDeviceInfo(profile);
     }
 
@@ -430,6 +452,7 @@ public class FQDeviceRotationService {
         if (profile == null) {
             return;
         }
+        currentProfileName = profile.getName() != null ? profile.getName() : "";
         if (profile.getUserAgent() != null) {
             fqApiProperties.setUserAgent(profile.getUserAgent());
         }

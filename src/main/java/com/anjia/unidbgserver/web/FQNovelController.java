@@ -156,20 +156,6 @@ public class FQNovelController {
     }
 
     /**
-     * 健康检查接口
-     * 
-     * @return 服务状态
-     */
-    @GetMapping("/health")
-    public Map<String, Object> health() {
-        Map<String, Object> healthStatus = new HashMap<>();
-        healthStatus.put("status", "UP");
-        healthStatus.put("service", "FQNovel Service");
-        healthStatus.put("timestamp", System.currentTimeMillis());
-        return healthStatus;
-    }
-
-    /**
      * 从HTTP请求中提取额外的请求头
      * 过滤掉标准请求头，只保留自定义头
      */
