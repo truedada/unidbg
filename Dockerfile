@@ -1,6 +1,6 @@
 # 使用 Google Distroless Java 8 (基于 Debian 12)
 # 优势：镜像更小、更安全、无 shell、无包管理器
-FROM gcr.io/distroless/java8-debian12:nonroot
+FROM gcr.io/distroless/java:8
 
 WORKDIR /app
 
@@ -8,7 +8,7 @@ WORKDIR /app
 ENV TZ=Asia/Shanghai
 
 # 复制 jar 文件
-COPY --chown=nonroot:nonroot target/fqnovel.jar /app/fqnovel.jar
+COPY target/fqnovel.jar /app/fqnovel.jar
 
 # 暴露端口
 ENV SERVER_PORT=9999
