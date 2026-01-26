@@ -9,7 +9,7 @@ spring:
     name: unidbg-boot-server
   mvc:
     async:
-      request-timeout: 120000
+      request-timeout: 180000
   task:
     execution:
       pool:
@@ -33,34 +33,24 @@ application:
     dynarmic: false
     verbose: false
     async: false
-    # 默认使用内置 APK（classpath）：com/dragon/read/oversea/gp/apk/base.apk
-    # 需要替换 APK：把新 APK 放到 src/main/resources/com/dragon/read/oversea/gp/apk/base.apk 即可
-    #
-    # 或者覆盖为本地文件路径（优先级更高）：
-    # apk-path: /abs/path/to/base.apk
-    #
-    # 或者显式指定 classpath 资源路径：
-    # apk-classpath: com/dragon/read/oversea/gp/apk/base.apk
 
 fq:
   download:
-    request-interval-ms: 500
+    request-interval-ms: 800
     max-retries: 3
-    retry-delay-ms: 1500
+    retry-delay-ms: 2000
     retry-max-delay-ms: 10000
-    # 上游 HTTP 超时（避免 RestTemplate 默认“无超时”导致线程卡死）
-    upstream-connect-timeout-ms: 8000
-    upstream-read-timeout-ms: 15000
-    # 连续异常达到阈值后，进程会自动退出（依赖 Docker/systemd 拉起）
+    upstream-connect-timeout-ms: 15000
+    upstream-read-timeout-ms: 30000
     auto-restart-enabled: true
-    auto-restart-error-threshold: 3
+    auto-restart-error-threshold: 5
     auto-restart-window-ms: 300000
-    auto-restart-min-interval-ms: 60000
+    auto-restart-min-interval-ms: 120000
     auto-restart-force-halt-after-ms: 10000
+    auto-restart-self-heal-enabled: true
+    auto-restart-self-heal-cooldown-ms: 120000
   api:
     base-url: https://api5-normal-sinfonlineb.fqnovel.com
-
-    # 默认设备配置（无 device-pool 时使用）
     user-agent: com.dragon.read.oversea.gp/68132 (Linux; U; Android 13; zh_CN; WLZ-AN00;
       Build/V433IR;tt-ok/3.12.13.4-tiktok)
     cookie: store-region=cn-zj; store-region-src=did; install_id=670078579016233;
@@ -81,13 +71,11 @@ fq:
       os-version: '13'
       os-api: '32'
 
-    # 设备池（风控时切换）：启动时会随机选一个作为当前设备；只使用前 3 个；切换冷却 30s
-    device-pool-size: 3
+    device-pool-size: 5
     device-pool-shuffle-on-startup: true
-    # 启动随机但做一次“轻量探测”：跳过启动就风控/空响应的设备（例如 SEARCH_NO_SEARCH_ID）
     device-pool-probe-on-startup: true
     device-pool-probe-max-attempts: 3
-    device-rotate-cooldown-ms: 30000
+    device-rotate-cooldown-ms: 60000
     device-pool:
       - name: dev001
         user-agent: com.dragon.read.oversea.gp/68132 (Linux; U; Android 13; zh_CN; WLZ-AN00;
@@ -130,22 +118,62 @@ fq:
           os-version: '13'
           os-api: '33'
       - name: dev003
-        user-agent: com.dragon.read.oversea.gp/68132 (Linux; U; Android 10; zh_CN; OnePlus10;
+        user-agent: com.dragon.read.oversea.gp/68132 (Linux; U; Android 10; zh_CN; GalaxyS22;
           Build/V291IR;tt-ok/3.12.13.4-tiktok)
-        cookie: store-region=cn-zj; store-region-src=did; install_id=3320676978521931;
+        cookie: store-region=cn-zj; store-region-src=did; install_id=9653334242625135;
         device:
           aid: '1967'
-          cdid: 3fd40c76-e207-4be5-bb2f-3b20fb5a805e
-          device-brand: OnePlus
-          device-id: '4774996543971246'
-          device-type: OnePlus10
+          cdid: bcc6a9de-ecb9-42f8-9df9-a45b6550d36e
+          device-brand: Samsung
+          device-id: '3915224178269716'
+          device-type: GalaxyS22
           dpi: '480'
           host-abi: arm64-v8a
-          install-id: '3320676978521931'
-          resolution: 2400*1080
+          install-id: '9653334242625135'
+          resolution: 1920*1080
           rom-version: V291IR+release-keys
           update-version-code: '68132'
           version-code: '68132'
           version-name: 6.8.1.32
           os-version: '10'
           os-api: '29'
+      - name: dev004
+        user-agent: com.dragon.read.oversea.gp/68132 (Linux; U; Android 12; zh_CN; MT2110;
+          Build/V417IR;tt-ok/3.12.13.4-tiktok)
+        cookie: store-region=cn-zj; store-region-src=did; install_id=3804266396159751;
+        device:
+          aid: '1967'
+          cdid: e7521c2a-88ca-4fcb-9110-ebcabf5369d7
+          device-brand: OnePlus
+          device-id: '3947527025786238'
+          device-type: MT2110
+          dpi: '640'
+          host-abi: armeabi-v7a
+          install-id: '3804266396159751'
+          resolution: 3200*1440
+          rom-version: V417IR+release-keys
+          update-version-code: '68132'
+          version-code: '68132'
+          version-name: 6.8.1.32
+          os-version: '12'
+          os-api: '32'
+      - name: dev005
+        user-agent: com.dragon.read.oversea.gp/68132 (Linux; U; Android 14; zh_CN; 21081111RG;
+          Build/V451IR;tt-ok/3.12.13.4-tiktok)
+        cookie: store-region=cn-zj; store-region-src=did; install_id=5212667943884142;
+        device:
+          aid: '1967'
+          cdid: 5b410f66-804e-4150-bfab-4462da9561bf
+          device-brand: Xiaomi
+          device-id: '6123947399501082'
+          device-type: 21081111RG
+          dpi: '640'
+          host-abi: arm64-v8a
+          install-id: '5212667943884142'
+          resolution: 3200*1440
+          rom-version: V451IR+release-keys
+          update-version-code: '68132'
+          version-code: '68132'
+          version-name: 6.8.1.32
+          os-version: '14'
+          os-api: '34'
